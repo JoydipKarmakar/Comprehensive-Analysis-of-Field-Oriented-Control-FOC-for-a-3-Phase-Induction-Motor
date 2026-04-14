@@ -1,0 +1,652 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor} % Added for instructional coloured text
+\geometry{a4paper, margin=.5in}
+
+\title{\textbf{Comprehensive Analysis of Field Oriented Control (FOC) \\ for a 3-Phase Induction Motor}}
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report provides a comprehensive, component-level technical analysis of the Simulink model \\ \texttt{VECTOR\_CONTROL\_FOC\_OF\_IM.slx}, which implements an Indirect Field Oriented Control (IFOC) architecture for a 50 HP Squirrel-Cage Induction Motor. Intended as an advanced instructional document for graduate-level electrical machines and drives coursework, this report systematically deconstructs the theoretical and practical frameworks embedded within the simulation. It begins by establishing the plant's equivalent circuit parameters and dynamic modelling. The analysis then explores the critical coordinate transformations (Forward and Reverse Clarke and Park) required to map stationary three-phase variables into a synchronously rotating $d-q$ reference frame. By examining the system's decoupling equations, the report demonstrates how IFOC achieves independent, high-performance regulation of rotor flux and electromagnetic torque—effectively mirroring the transient dynamics of a separately excited DC machine. Furthermore, the document evaluates the discrete-time closed-loop control strategy, detailing the tuning parameters and anti-windup mechanisms of the cascaded Proportional-Integral (PI) controllers used in the outer speed and inner current loops. Finally, the report dissects the Space Vector Pulse Width Modulation (SVPWM) synthesis used to drive the three-phase inverter, highlighting its advantages in optimising DC bus utilisation and minimising total harmonic distortion (THD). Ultimately, this analysis bridges complex electromechanical theory with practical digital control implementation.
+\end{abstract}
+
+\begin{figure}[ht]
+\centering
+% Save your top-level Simulink model screenshot as 'system_root.png' in the same folder
+\includegraphics[width=0.9\textwidth]{system_root.png}
+\caption{Top-Level Simulink Model Architecture of the FOC for Induction Motor}
+\label{fig:system_root}
+\end{figure}
+
+\section{Introduction to Field Oriented Control}
+
+Traditionally, the control of induction machines was dominated by scalar methods, such as constant Volts-per-Hertz (V/f) control. While adequate for basic steady-state operations, scalar control governs only the magnitude and frequency of the applied voltage and currents, fundamentally ignoring the spatial orientation of the electromagnetic fields. Consequently, scalar methods suffer from sluggish transient responses, cross-coupling effects, and an inability to independently regulate torque and flux during dynamic state changes.
+
+Field Oriented Control (FOC), also known as Vector Control, represents a revolutionary paradigm shift in AC machine drives, overcoming the limitations of scalar control. The fundamental objective of FOC is to emulate the highly desirable, decoupled control dynamics of a separately excited DC motor. In a traditional DC machine, the field flux and the armature flux are maintained in a strict state of spatial orthogonality (perpendicularity) by the mechanical commutator. This decoupling allows the field current and armature current to be manipulated independently to control magnetic flux and electromagnetic torque, respectively, yielding instantaneous dynamic response.
+
+To replicate this orthogonal decoupling in a three-phase AC induction machine, FOC treats the multi-phase stator currents as spatial vectors. Through a rigorous set of mathematical coordinate transformations—namely the Clarke and Park transforms—the time-varying, three-phase AC variables ($i_a, i_b, i_c$) are projected onto a two-dimensional, synchronously rotating reference frame ($d-q$ axes). Because this reference frame rotates at the same synchronous speed as the machine's magnetic field, the sinusoidal AC quantities are transformed into DC steady-state values, allowing for the implementation of standard, highly stable Proportional-Integral (PI) control loops.
+
+By deliberately aligning the direct-axis ($d$-axis) of this rotating frame with the rotor flux linkage vector, the overall stator current is mathematically decomposed into two entirely independent, orthogonal components:
+\begin{itemize}
+    \item \textbf{Flux-Producing Component ($i_{ds}$):} The direct-axis stator current is deliberately constrained by the control algorithm to align perfectly with the rotor flux linkage vector ($\psi_r$). In this oriented reference frame, $i_{ds}$ acts identically to the field excitation current ($I_f$) in a separately excited DC motor; it is strictly responsible for establishing and maintaining the internal magnetisation of the induction machine. Under steady-state conditions, the relationship is purely linear: the rotor flux magnitude is governed by $\psi_r = L_m i_{ds}$. In the constant-torque region of operation (below base speed), $i_{ds}$ is maintained at a constant, nominal value to ensure optimal magnetic loading. Conversely, in the constant-power region (above base speed), $i_{ds}$ is dynamically attenuated to facilitate ``field weakening,'' actively reducing the back-EMF to allow further speed increases within the inverter's maximum voltage limit.
+
+    \item \textbf{Torque-Producing Component ($i_{qs}$):} The quadrature-axis stator current is maintained precisely at a $90^\circ$ electrical angle relative to the rotor flux axis. Because the entirety of the machine's flux is mathematically isolated onto the $d$-axis ($\psi_{qr} = 0$), the cross-product interaction that generates mechanical force relies exclusively on this orthogonal $q$-axis current. It operates analogously to the armature current ($I_a$) in a DC motor. The developed electromagnetic torque can be expressed via the decoupled equation:
+    \begin{equation}
+        T_e = \frac{3}{2} \left(\frac{P}{2}\right) \frac{L_m}{L_r} \psi_r i_{qs}
+    \end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Substituting the motor parameters: $P = 4$, $L_m = 34.7 \, \text{mH} = 0.0347 \, \text{H}$, $L_r = L_{lr} + L_m = 0.8 \, \text{mH} + 34.7 \, \text{mH} = 35.5 \, \text{mH} = 0.0355 \, \text{H}$, and assuming nominal flux $\psi_r = 0.96 \, \text{Wb}$:
+    \begin{align*}
+        T_e &= \frac{3}{2} \left(\frac{4}{2}\right) \left(\frac{0.0347}{0.0355}\right) (0.96) \cdot i_{qs} \\
+        T_e &= 3 \times (0.9775) \times (0.96) \cdot i_{qs} \\
+        T_e &\approx 2.8152 \cdot i_{qs} \, \text{N}\cdot\text{m}
+    \end{align*}
+    \textit{This confirms a direct, linear torque constant of $2.8152 \, \text{N}\cdot\text{m/A}$ for the $q$-axis current.}}
+    % -------------------------
+
+    Because the rotor flux $\psi_r$ is held constant by the independent $d$-axis control loop, the electromagnetic torque $T_e$ becomes directly, linearly, and instantaneously proportional to $i_{qs}$. This complete spatial decoupling is the hallmark of FOC: it allows the induction motor to respond to aggressive step changes in torque demand instantaneously, eliminating the sluggish transient behaviour and severe cross-coupling dynamics typical of scalar (V/f) control methods.
+\end{itemize}
+
+The absolute critical requirement for FOC is the precise, real-time determination of the rotor flux angle ($\theta_e$) to execute the Park and Inverse-Park transformations. The Simulink architecture analysed in this report specifically utilises \textbf{Indirect Field Oriented Control (IFOC)}. Rather than relying on physical Hall-effect sensors embedded in the air gap or complex state observers to directly measure the flux (Direct FOC), the IFOC scheme mathematically synthesises the required flux angle. It achieves this by taking the measured mechanical rotor speed and adding it to a calculated, feedforward slip frequency—an approach that is robust, highly prevalent in modern industrial drives, and capable of delivering exceptional dynamic performance across all operating quadrants.
+
+\section{Induction Motor Plant Parameters and Dynamic Modelling}
+
+The electromechanical plant governed by this control architecture is a three-phase Squirrel-Cage Induction Motor (SCIM). The SCIM is the industry standard for rugged, high-performance variable-speed drives due to its brushless construction and inherent reliability. However, from a control perspective, the squirrel-cage design presents a unique challenge: the rotor currents and rotor flux linkages are physically inaccessible and cannot be directly measured. Consequently, the control strategy relies entirely on an accurate mathematical model of the machine, which is fundamentally dictated by its equivalent circuit parameters.
+
+\begin{figure}[ht]
+\centering
+% Save your Induction Motor block parameter UI screenshot as 'induction_motor_block.png'
+\includegraphics[width=0.6\textwidth]{induction_motor_block.png}
+\caption{Simulink Asynchronous Machine Block Parameters (50 HP / 460 V)}
+\label{fig:im_block}
+\end{figure}
+
+Based on the model's initialisation routines and the machine block mask configurations, the motor is defined by the ratings and parameters summarised in Table \ref{tab:im_params}.
+
+\begin{table}[ht]
+\centering
+\caption{Squirrel-Cage Induction Motor Nominal Ratings and Equivalent Circuit Parameters}
+\label{tab:im_params}
+\vspace{0.2cm}
+\begin{tabular}{@{}llc@{}}
+\toprule
+\textbf{Parameter Description} & \textbf{Symbol} & \textbf{Value} \\
+\midrule
+\multicolumn{3}{c}{\textit{Nominal Ratings}} \\
+\midrule
+Nominal Power & $S$ & 50 HP ($37.3 \text{ kW}$) \\
+Stator Line-to-Line Voltage & $V_s$ & 460 V \\
+Nominal Frequency & $f$ & 50 Hz \\
+Number of Poles & $P$ & 4 (2 Pole Pairs) \\
+Synchronous Speed & $N_s$ & 1500 RPM \\
+\midrule
+\multicolumn{3}{c}{\textit{Electrical Parameters (Per Phase)}} \\
+\midrule
+Stator Resistance & $R_s$ & $0.087 \, \Omega$ \\
+Rotor Resistance (Referred to Stator) & $R_r$ & $0.228 \, \Omega$ \\
+Stator Leakage Inductance & $L_{ls}$ & $0.1 \, \text{mH}$ \\
+Rotor Leakage Inductance (Referred) & $L_{lr}$ & $0.8 \, \text{mH}$ \\
+Magnetizing Inductance & $L_m$ & $34.7 \, \text{mH}$ \\
+\midrule
+\multicolumn{3}{c}{\textit{Mechanical Parameters}} \\
+\midrule
+Moment of Inertia & $J$ & $0.662 \, \text{kg}\cdot\text{m}^2$ \\
+Viscous Friction Coefficient & $F$ & $0.1 \, \text{N}\cdot\text{m}\cdot\text{s/rad}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Significance of Electrical Parameters in FOC}
+In the context of Vector Control, these raw parameters are not merely static values; they directly shape the dynamic transient response of the decoupling matrices. From the values provided in Table \ref{tab:im_params}, we must derive the lumped self-inductances of the stator ($L_s$) and rotor ($L_r$):
+\begin{align}
+    L_s &= L_{ls} + L_m = 0.1 \, \text{mH} + 34.7 \, \text{mH} = 34.8 \, \text{mH} \\
+    L_r &= L_{lr} + L_m = 0.8 \, \text{mH} + 34.7 \, \text{mH} = 35.5 \, \text{mH}
+\end{align}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Converting the inductances to Henrys for base SI unit compatibility:
+    \begin{align*}
+        L_s &= 34.8 \times 10^{-3} \, \text{H} = 0.0348 \, \text{H} \\
+        L_r &= 35.5 \times 10^{-3} \, \text{H} = 0.0355 \, \text{H}
+    \end{align*}}
+    % -------------------------
+
+One of the most critical derived parameters in Indirect Field Oriented Control (IFOC) is the \textbf{rotor time constant ($\tau_r$)}, defined as:
+\begin{equation}
+    \tau_r = \frac{L_r}{R_r} = \frac{35.5 \times 10^{-3}}{0.228} \approx 0.1557 \, \text{seconds}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        \tau_r &= \frac{0.0355}{0.228} \\
+        \tau_r &= 0.15570175 \, \text{s}
+    \end{align*}}
+    % -------------------------
+
+The accuracy of $\tau_r$ is absolutely paramount. In the IFOC feedforward slip-calculation pathway, the required slip frequency ($\omega_{sl}$) is computed continuously as a function of the torque-producing current reference ($i_{qs}^*$) and this exact time constant. If the value of $R_r$ deviates during real-world operation (e.g., due to thermal heating of the rotor bars), $\tau_r$ will change, leading to a phenomenon known as \textit{detuning}. Detuning causes spatial misalignment between the expected and actual $d-q$ axes, resulting in cross-coupling where torque commands inadvertently perturb the machine flux, thereby degrading the transient performance.
+
+Furthermore, the machine's \textbf{total leakage factor ($\sigma$)}, which dictates the maximum rate of change of stator currents (and thus the necessary bandwidth of the inner PI current controllers), is calculated as:
+\begin{equation}
+    \sigma = 1 - \frac{L_m^2}{L_s L_r} %\approx 1 - \frac{(34.7)^2}{(34.8)(35.5)} \approx 0.025
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        \sigma &= 1 - \frac{(0.0347)^2}{(0.0348 \times 0.0355)} \\
+        \sigma &= 1 - \frac{0.00120409}{0.0012354} \\
+        \sigma &= 1 - 0.97465 \\
+        \sigma &= 0.02535
+    \end{align*}}
+    % -------------------------
+
+This highly coupled magnetic relationship ($\sigma \ll 1$) confirms a well-designed motor but necessitates high-gain, fast-acting current loops to force the stator currents to track the instantaneous FOC references.
+
+\subsection{Mechanical Dynamics and Speed Loop Tuning}
+The mechanical parameters—specifically the moment of inertia ($J = 0.662 \, \text{kg}\cdot\text{m}^2$) and the viscous friction coefficient ($F = 0.1 \, \text{N}\cdot\text{m}\cdot\text{s/rad}$)—govern the low-frequency, macroscopic dynamics of the physical plant. While the electrical dynamics (current and flux) operate on the order of milliseconds, the mechanical dynamics operate on the order of tenths of seconds or slower. This inherent temporal separation is the fundamental justification for the cascaded control architecture utilised in this model, where a slower outer speed loop provides the torque command ($T_e^*$) to the high-bandwidth inner current loops.
+
+The mechanical equation of motion that dictates the rotor's dynamic trajectory is governed by:
+\begin{equation}
+    T_e - T_L = J \frac{d\omega_m}{dt} + F\omega_m
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Substituting the mechanical parameters of the 50 HP motor:
+    \begin{align*}
+        T_e - T_L &= 0.662 \frac{d\omega_m}{dt} + 0.1 \cdot \omega_m
+    \end{align*}}
+    % -------------------------
+
+where $T_e$ is the developed electromagnetic torque, $T_L$ is the applied exogenous load torque, and $\omega_m$ is the mechanical rotor speed in rad/s. 
+
+To systematically tune the outer Proportional-Integral (PI) speed controller, we analyse the plant in the complex frequency domain. Assuming the load torque $T_L$ acts as an independent disturbance ($T_L = 0$ for the primary plant transfer function), taking the Laplace transform of the mechanical equation yields:
+\begin{equation}
+    \frac{\omega_m(s)}{T_e(s)} = \frac{1}{Js + F}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        \frac{\omega_m(s)}{T_e(s)} &= \frac{1}{0.662s + 0.1}
+    \end{align*}}
+    % -------------------------
+
+This first-order transfer function reveals that the mechanical plant acts as a natural low-pass filter. The relatively substantial inertia of the 50 HP motor is highly beneficial in one regard: it provides significant kinetic energy storage that naturally attenuates and smooths out the high-frequency torque ripples inevitably generated by the discrete switching of the SVPWM inverter. 
+
+However, this large inertia also imposes a fundamental upper limit on the achievable bandwidth of the speed control loop. The outer speed PI controller must be tuned to address this specific mechanical pole:
+\begin{itemize}
+    \item \textbf{Proportional Gain ($K_p$):} Provides the immediate, aggressive control effort required to overcome the inertial mass ($J$) during transient speed changes.
+    \item \textbf{Integral Gain ($K_i$):} Guarantees zero steady-state tracking error and is strictly responsible for rejecting the steady-state load torque disturbances ($T_L$) applied to the shaft.
+\end{itemize}
+
+In practice, the speed loop bandwidth is deliberately constrained to be at least one decade (a factor of 10) slower than the inner $q$-axis current loop bandwidth. This strict frequency separation ensures that the inner loop appears as a perfect, instantaneous gain of $1$ from the perspective of the outer loop, preventing complex conjugate pole interactions and ensuring absolute closed-loop stability across the entire operating envelope.
+
+\section{Control System Architecture and Discrete-Time Execution}
+
+\begin{figure}[ht]
+\centering
+% Save your Field Oriented Control Subsystem screenshot as 'foc_main_subsystem.png'
+\includegraphics[width=0.9\textwidth]{foc_main_subsystem.png}
+\caption{Internal Architecture of the Main Field Oriented Control Subsystem}
+\label{fig:foc_subsystem}
+\end{figure}
+
+The Simulink model is architected around a series of highly deterministic, cascading subsystems that execute the Indirect Field Oriented Control (IFOC) algorithm. A critical parameter governing this digital control system is the fundamental sample time, set to $ T_s = 2 \, \mu s$. This exceptionally fast execution rate (equivalent to a 500 kHz update frequency) ensures that the discrete-time z-domain implementation introduces negligible phase delay margin. This high-resolution temporal granularity is essential for precise synthesis of the Space Vector PWM signals and ensures absolute stability in the high-bandwidth inner current regulation loops.
+
+\subsection{Coordinate Transformations: The Mathematical Foundation of FOC}
+
+The central premise of Field Oriented Control lies in resolving the fundamental limitation of standard AC linear controllers: the inability of a standard Proportional-Integral (PI) controller to track a time-varying sinusoidal reference without a steady-state magnitude and phase error. 
+
+By transforming the time-varying, three-phase AC stator variables into a synchronously rotating $d-q$ reference frame, FOC mathematically forces these alternating signals to appear as DC quantities. This allows simple, well-tuned PI controllers to achieve zero steady-state error. This process is accomplished through a sequence of three rigorous mathematical projections:
+
+\begin{figure}[ht]
+\centering
+% Save the Forward Clarke Subsystem screenshot as 'forward_clarke.png'
+\includegraphics[width=0.6\textwidth]{forward_clarke.png}
+\caption{Simulink Subsystem: Forward Clarke Transform ($abc$ to $\alpha\beta$)}
+\label{fig:forward_clarke}
+\end{figure}
+
+\begin{itemize}
+    \item \textbf{Forward Clarke Transform (Stationary $3 \to 2$ Projection):} 
+    The initial stage of the vector control algorithm simplifies the three-phase AC system by projecting the measured stator phase currents ($i_a, i_b, i_c$)—which are spatially displaced by $120^\circ$—onto an equivalent two-dimensional orthogonal reference frame ($\alpha-\beta$ axes). In a standard star-connected induction motor without a neutral return path, Kirchhoff's current law dictates that the sum of the phase currents is strictly zero ($i_a + i_b + i_c = 0$). Consequently, the zero-sequence homopolar component ($i_0$) is inherently zero and mathematically discarded. 
+    
+    To ensure that the peak amplitude of the phase currents is preserved in the two-phase system—a necessity for straightforward controller tuning and direct voltage limit comparisons—the model utilises the \textit{amplitude-invariant} Clarke transformation matrix:
+    \begin{equation}
+        \begin{bmatrix} i_\alpha \\ i_\beta \end{bmatrix} = 
+        \frac{2}{3}
+        \begin{bmatrix} 
+        1 & -\frac{1}{2} & -\frac{1}{2} \\ 
+        0 & \frac{\sqrt{3}}{2} & -\frac{\sqrt{3}}{2} 
+        \end{bmatrix}
+        \begin{bmatrix} i_a \\ i_b \\ i_c \end{bmatrix}
+    \end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Assuming instantaneous balanced stator currents with a peak of $100 \, \text{A}$, e.g., $i_a = 100\text{A}, i_b = -50\text{A}, i_c = -50\text{A}$ at $\omega t = 0$:
+    \begin{align*}
+        i_\alpha &= \frac{2}{3} \left(1(100) - 0.5(-50) - 0.5(-50)\right) = \frac{2}{3}(100 + 25 + 25) = 100 \, \text{A} \\
+        i_\beta &= \frac{2}{3} \left(0(100) + 0.866(-50) - 0.866(-50)\right) = 0 \, \text{A}
+    \end{align*}
+    \textit{The amplitude of $100 \, \text{A}$ is mathematically preserved in the $\alpha-\beta$ plane.}}
+    % -------------------------
+
+    While the resulting $i_\alpha$ and $i_\beta$ components now exist in a mathematically simpler orthogonal complex plane, they remain time-varying sinusoidal waveforms oscillating at the fundamental stator frequency ($\omega_e$).
+
+\begin{figure}[ht]
+\centering
+% Save the Forward Park Subsystem screenshot as 'forward_park.png'
+\includegraphics[width=0.6\textwidth]{forward_park.png}
+\caption{Simulink Subsystem: Forward Park Transform ($\alpha\beta$ to $dq$)}
+\label{fig:forward_park}
+\end{figure}
+
+    \item \textbf{Forward Park Transform (Stationary $\alpha-\beta$ to Rotating $d-q$ Projection):} 
+    This transformation is the conceptual heart of Field-Oriented Control. Standard linear Proportional-Integral (PI) controllers suffer from finite bandwidth limitations, meaning they cannot track time-varying sinusoidal signals without inducing steady-state amplitude and phase errors. The Park transform elegantly resolves this control dilemma by projecting the stationary $\alpha-\beta$ frame onto a synchronously rotating reference frame ($d-q$ axes) that spins at the exact electrical angular velocity of the rotor magnetic flux.
+    
+    Utilising the instantaneous rotor flux angle ($\theta_e$) synthesised by the IFOC slip estimator, the rotational mapping is defined as:
+    \begin{equation}
+        \begin{bmatrix} i_d \\ i_q \end{bmatrix} = 
+        \begin{bmatrix} 
+        \cos\theta_e & \sin\theta_e \\ 
+        -\sin\theta_e & \cos\theta_e 
+        \end{bmatrix}
+        \begin{bmatrix} i_\alpha \\ i_\beta \end{bmatrix}
+    \end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} If the flux angle is perfectly aligned such that $\theta_e = \omega_e t$, and $i_\alpha = I_m \cos(\omega_e t)$, $i_\beta = I_m \sin(\omega_e t)$:
+    \begin{align*}
+        i_d &= I_m \cos(\omega_e t)\cos(\omega_e t) + I_m \sin(\omega_e t)\sin(\omega_e t) = I_m (\cos^2 + \sin^2) = I_m \\
+        i_q &= -I_m \cos(\omega_e t)\sin(\omega_e t) + I_m \sin(\omega_e t)\cos(\omega_e t) = 0
+    \end{align*}
+    \textit{The AC terms are perfectly resolved into DC constants.}}
+    % -------------------------
+
+    Physically, this operation locks the observer's perspective to the spinning magnetic field. From the vantage point of this rotating frame, the fundamental AC currents are completely demodulated into steady-state DC values. By deliberately aligning the direct-axis ($d$) with the rotor flux linkage vector, $i_d$ purely commands the magnetising flux, while the quadrature-axis current ($i_q$), shifted by 90 electrical degrees, independently commands the active electromagnetic torque.
+
+\begin{figure}[ht]
+\centering
+% Save the Reverse Park Subsystem screenshot as 'reverse_park.png'
+\includegraphics[width=0.6\textwidth]{reverse_park.png}
+\caption{Simulink Subsystem: Reverse Park Transform ($dq$ back to $\alpha\beta$)}
+\label{fig:reverse_park}
+\end{figure}
+
+    \item \textbf{Reverse Park Transform (Coordinate De-rotation for Actuation):} 
+    Once the inner PI current regulators have processed the DC error signals in the $d-q$ domain, they generate the required decoupling voltage commands ($v_d^*$ and $v_q^*$). Because the physical inverter and motor operate in the stationary reference frame, these rotating voltage vectors must be translated back. The Reverse (or Inverse) Park transform performs this coordinate de-rotation. Since the Forward Park matrix is orthogonal, its inverse is simply its matrix transpose:
+    \begin{equation}
+        \begin{bmatrix} v_\alpha^* \\ v_\beta^* \end{bmatrix} = 
+        \begin{bmatrix} 
+        \cos\theta_e & -\sin\theta_e \\ 
+        \sin\theta_e & \cos\theta_e 
+        \end{bmatrix}
+        \begin{bmatrix} v_d^* \\ v_q^* \end{bmatrix}
+    \end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} If the controllers output $v_d^* = 100 \, \text{V}$ and $v_q^* = 200 \, \text{V}$ at $\theta_e = 30^\circ$ ($\pi/6$ rad):
+    \begin{align*}
+        v_\alpha^* &= 100 \cos(30^\circ) - 200 \sin(30^\circ) = 100(0.866) - 200(0.5) = 86.6 - 100 = -13.4 \, \text{V} \\
+        v_\beta^* &= 100 \sin(30^\circ) + 200 \cos(30^\circ) = 100(0.5) + 200(0.866) = 50 + 173.2 = 223.2 \, \text{V}
+    \end{align*}}
+    % -------------------------
+
+    The resulting outputs, $v_\alpha^*$ and $v_\beta^*$, represent the commanded stator voltage space vector in the stationary plane. Notably, the control architecture deliberately terminates the reverse transformation sequence at this $\alpha-\beta$ stage. A full Reverse Clarke Transform (converting back to $a, b, c$ phase voltages) is not required because the downstream Space Vector PWM (SVPWM) subsystem is mathematically optimised to natively accept the orthogonal $v_\alpha^*$ and $v_\beta^*$ components to determine the active sector and compute precise transistor dwell times.
+\end{itemize}
+
+\subsection{Flux and Torque Decoupling Equations: The Core of IFOC}
+Within the \texttt{Field Oriented Control} subsystem, the decoupling equations serve as the vital bridge between macroscopic mechanical/magnetic commands and microscopic electrical current references. The primary objective here is to translate the commanded electromagnetic torque ($T_e^*$) and the desired rotor flux ($\psi_r^*$) into their respective $d-q$ axis stator current references ($i_{ds}^*$ and $i_{qs}^*$).
+
+\subsubsection{Direct-Axis Current Reference ($i_{ds}^*$)}
+
+\begin{figure}[ht]
+\centering
+% Save the Id* Calculation subsystem screenshot as 'id_calc.png'
+\includegraphics[width=0.5\textwidth]{id_calc.png}
+\caption{Simulink Subsystem: $I_d^*$ Reference Calculation Block}
+\label{fig:id_calc}
+\end{figure}
+
+The direct-axis current is strictly responsible for the magnetisation of the induction machine. The transient behaviour of the rotor flux linkage $\psi_r$ is governed by the following first-order differential equation in the synchronous reference frame:
+\begin{equation}
+    \tau_r \frac{d\psi_r}{dt} + \psi_r = L_m i_{ds}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        0.1557 \frac{d\psi_r}{dt} + \psi_r &= 0.0347 \cdot i_{ds}
+    \end{align*}}
+    % -------------------------
+
+where $\tau_r = L_r / R_r$ is the rotor time constant, and $L_r = L_{lr} + L_m$ is the total rotor inductance. 
+
+In standard Indirect FOC, it is generally assumed that the flux is maintained at a constant, steady-state value (meaning $\frac{d\psi_r}{dt} = 0$) unless the machine is operating in the field-weakening region. Under this steady-state assumption, the differential term vanishes, and the reference direct-axis current simplifies to a pure proportional gain relationship:
+\begin{equation}
+    i_{ds}^* = \frac{\psi_r^*}{L_m}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Substituting $\psi_r^* = 0.96 \, \text{Wb}$ and $L_m = 0.0347 \, \text{H}$:
+    \begin{align*}
+        i_{ds}^* &= \frac{0.96}{0.0347} \\
+        i_{ds}^* &= 27.6657 \, \text{A}
+    \end{align*}
+    \textit{The $d$-axis current controller will constantly regulate to $27.67 \, \text{A}$ to maintain nominal flux.}}
+    % -------------------------
+
+In this specific Simulink implementation, the reference flux $\psi_r^*$ is statically clamped to $0.96 \, \text{Wb}$. This value corresponds to the nominal rated flux of the 50 HP motor, strategically chosen to operate the machine near the knee of its B-H magnetisation curve—maximising torque capability while strictly avoiding deep magnetic core saturation.
+
+\subsubsection{Quadrature-Axis Current Reference ($i_{qs}^*$)}
+
+\begin{figure}[ht]
+\centering
+% Save the Iq* Calculation subsystem screenshot as 'iq_calc.png'
+\includegraphics[width=0.6\textwidth]{iq_calc.png}
+\caption{Simulink Subsystem: $I_q^*$ Reference Calculation Block}
+\label{fig:iq_calc}
+\end{figure}
+
+The quadrature-axis current exerts direct, instantaneous control over the machine's developed torque. The general expression for the electromagnetic torque of an induction machine in the arbitrary $d-q$ reference frame is given by:
+\begin{equation}
+    T_e = \frac{3}{2} \left( \frac{P}{2} \right) \frac{L_m}{L_r} \left( \psi_{dr} i_{qs} - \psi_{qr} i_{ds} \right)
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        T_e &= \frac{3}{2} (2) \left(\frac{0.0347}{0.0355}\right) \left( \psi_{dr} i_{qs} - \psi_{qr} i_{ds} \right) \\
+        T_e &= 2.9324 \left( \psi_{dr} i_{qs} - \psi_{qr} i_{ds} \right)
+    \end{align*}}
+    % -------------------------
+
+The entire mathematical premise of Field-Oriented Control relies on aligning the $d$-axis perfectly with the rotor flux vector. This orientation enforces the condition that the total rotor flux is entirely on the $d$-axis ($\psi_{dr} = \psi_r$), forcing the quadrature flux to zero ($\psi_{qr} = 0$). Applying this FOC constraint simplifies the torque equation immensely:
+\begin{equation}
+    T_e = \frac{3}{2} \left( \frac{P}{2} \right) \frac{L_m}{L_r} \psi_r i_{qs}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Applying $\psi_{qr} = 0$ and $\psi_r = 0.96$:
+    \begin{align*}
+        T_e &= 2.9324 \times (0.96 \cdot i_{qs}) \\
+        T_e &= 2.8152 \cdot i_{qs} \, \text{N}\cdot\text{m}
+    \end{align*}}
+    % -------------------------
+
+To achieve a commanded torque $T_e^*$, we mathematically invert this relationship to solve for the necessary reference current $i_{qs}^*$. Substituting $L_r = L_{lr} + L_m$, we obtain the exact equation modelled in the control subsystem:
+\begin{equation}
+    i_{qs}^* = \frac{2}{3} \cdot \frac{2}{P} \cdot \frac{L_{lr} + L_m}{L_m} \cdot \frac{T_e^*}{\psi_r}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Isolating $i_{qs}^*$:
+    \begin{align*}
+        i_{qs}^* &= \left( \frac{2}{3} \right) \left( \frac{2}{4} \right) \left( \frac{0.0355}{0.0347} \right) \frac{T_e^*}{0.96} \\
+        i_{qs}^* &= (0.3333) \times (1.02305) \times \frac{T_e^*}{0.96} \\
+        i_{qs}^* &= 0.3552 \cdot T_e^* \, \text{A}
+    \end{align*}
+    \textit{For example, to produce a nominal torque of $100 \, \text{N}\cdot\text{m}$, the control commands an $i_{qs}^*$ of $35.52 \, \text{A}$.}}
+    % -------------------------
+
+\subsubsection{Computational Safeguards in Digital Implementation}
+A critical engineering consideration is evident in the denominator of the $i_{qs}^*$ equation. The calculation requires division by the instantaneous rotor flux magnitude $\psi_r$. At the exact moment of motor startup ($t = 0$), the machine is completely unmagnetized, meaning $\psi_r = 0$. 
+
+Attempting this calculation natively would result in a division-by-zero singularity, instantly crashing the digital controller or driving the PI regulators into severe, irrecoverable windup. To guarantee absolute computational stability in the DSP/Simulink environment, the model's calculation block introduces a minor numerical perturbation ($\epsilon = 1 \times 10^{-3}$) to the flux denominator:
+\begin{equation}
+    i_{qs}^* \propto \frac{T_e^*}{\psi_r + 10^{-3}}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} At $t=0$, $\psi_r \approx 0$:
+    \begin{align*}
+        i_{qs}^* &= (0.341) \cdot \frac{T_e^*}{0 + 0.001} \\
+        i_{qs}^* &= 341 \cdot T_e^* \, \text{A}
+    \end{align*}
+    \textit{The $10^{-3}$ offset keeps the current request extremely high but bounded, allowing current to build until nominal flux is reached.}}
+    % -------------------------
+
+This elegantly prevents infinite current commands during the brief transient window when the $i_{ds}$ current is initially building the magnetic field inside the machine's air gap.
+
+\subsection{Slip and Flux Angle ($\theta_e$) Synthesis: The Core of IFOC}
+
+\begin{figure}[ht]
+\centering
+% Save the Theta Calculation subsystem screenshot as 'theta_calc.png'
+\includegraphics[width=0.6\textwidth]{theta_calc.png}
+\caption{Simulink Subsystem: IFOC Slip and Flux Angle ($\theta$) Estimation}
+\label{fig:theta_calc}
+\end{figure}
+
+The absolute crux of any Field-Oriented Control scheme is the precise alignment of the $d-q$ rotating reference frame with the instantaneous position of the rotor flux linkage vector, denoted as $\theta_e$. While Direct FOC measures or estimates this flux via air-gap sensors or complex terminal-voltage observers, Indirect Field Oriented Control (IFOC) synthesises this angle mathematically in a feedforward manner. 
+
+In the IFOC paradigm, the necessary slip frequency ($\omega_{sl}$) is dictated by the fundamental requirement of FOC: forcing the quadrature-axis rotor flux to zero ($\psi_{qr} = 0$) and holding the direct-axis rotor flux constant in steady state ($\frac{d\psi_{dr}}{dt} = 0$). Applying these constraints to the rotor voltage equations in the synchronous frame yields the governing slip relation:
+\begin{equation}
+    \omega_{sl} = \frac{L_m}{\tau_r} \cdot \frac{i_{qs}^*}{\psi_r^*}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        \omega_{sl} &= \frac{0.0347}{0.1557} \cdot \frac{i_{qs}^*}{0.96} \\
+        \omega_{sl} &= (0.2228) \cdot \frac{i_{qs}^*}{0.96} \\
+        \omega_{sl} &= 0.232 \cdot i_{qs}^* \, \text{rad/s}
+    \end{align*}}
+    % -------------------------
+
+where $\tau_r = \frac{L_{lr} + L_m}{R_r}$ is the critically important rotor time constant. In the specific Simulink architecture provided, a minor numerical offset ($1 \times 10^{-3}$) is explicitly added to the flux reference in the denominator. This is a standard and necessary digital control safeguard to prevent division-by-zero singularities during initial machine magnetisation (startup) when $\psi_r^* \approx 0$.
+
+To determine the synchronous speed of the reference frame ($\omega_e$), this calculated slip frequency must be added to the electrical rotor speed ($\omega_r$). Because the plant outputs the mechanical rotor speed ($\omega_m$ in rad/s), it is first scaled by the number of pole pairs to convert to the electrical domain:
+\begin{equation}
+    \omega_r = \omega_m \left(\frac{P}{2}\right)
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        \omega_r &= \omega_m \left(\frac{4}{2}\right) = 2 \cdot \omega_m \, \text{rad/s}
+    \end{align*}}
+    % -------------------------
+
+\begin{equation}
+    \omega_e = \omega_r + \omega_{sl}
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} 
+    \begin{align*}
+        \omega_e &= 2\omega_m + 0.232 \cdot i_{qs}^* \, \text{rad/s}
+    \end{align*}}
+    % -------------------------
+
+Finally, the instantaneous rotor flux angle $\theta_e$ is obtained by integrating the synchronous speed. In the continuous-time domain, this is simply $\theta_e = \int \omega_e \, dt$. However, within the discrete-time execution of the Simulink model operating at a sample time of $ T_S = 2 \, \mu s$, this is implemented via a discrete numerical integrator (such as Forward Euler):
+\begin{equation}
+    \theta_e[k] = \Big( \theta_e[k-1] + \omega_e[k] \cdot T_s \Big) \mod 2\pi
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} For $T_s = 2 \times 10^{-6}$ s:
+    \begin{align*}
+        \theta_e[k] &= \Big( \theta_e[k-1] + \omega_e[k] \cdot (0.000002) \Big) \mod 2\pi
+    \end{align*}}
+    % -------------------------
+
+The modulo $2\pi$ operator is critical; it wraps the angle within the $[0, 2\pi]$ interval, preventing numerical overflow in the DSP registers and ensuring stable arguments for the subsequent trigonometric functions ($\sin$ and $\cos$) required by the Park and Inverse-Park transformations. 
+
+It is worth noting pedagogically that the accuracy of $\theta_e$ relies entirely on the accuracy of the slip calculation, which is heavily dependent on the rotor resistance $R_r$. If thermal variations cause $R_r$ to drift during operation, $\tau_r$ will change, leading to an incorrect slip calculation. This phenomenon, known as \textit{detuning}, misaligns the $d-q$ axes and degrades the decoupling integrity of the IFOC system.
+
+\subsection{Discrete PI Controllers}
+
+\begin{figure}[ht]
+\centering
+% Save the PI Controller mask/parameters screenshot as 'pi_controllers.png'
+\includegraphics[width=0.5\textwidth]{pi_controllers.png}
+\caption{Cascaded Discrete PI Controllers for Outer Speed and Inner Current Loops}
+\label{fig:pi_controllers}
+\end{figure}
+
+The model utilises parallel-form discrete PI(D) controllers for closed-loop regulation:
+\begin{itemize}
+    \item \textbf{Current Loop ($d$-axis):} Regulates $i_d$ to match $i_d^*$. Tuned with $K_p = 100$, $K_i = 26$, and $K_d = 30$.
+    \item \textbf{Current Loop ($q$-axis):} Regulates $i_q$ to match $i_q^*$. Tuned with $K_p = 100$, $K_i = 26$, and $K_d = 30$.
+    \item \textbf{Outer Speed Loop:} Generates the torque reference $T_e^*$ based on the speed error. Tuned with $K_p = 20$, $K_i = 26$, $K_d = 0$, and features saturation limits of $\pm 600 \, \text{N}\cdot\text{m}$.
+\end{itemize}
+
+\section{Space Vector Pulse Width Modulation (SVPWM)}
+
+\begin{figure}[ht]
+\centering
+% Save the Three Phase Inverter bridge block screenshot as 'universal_bridge.png'
+\includegraphics[width=0.4\textwidth]{universal_bridge.png}
+\caption{Simulink Universal Bridge Block Acting as the 3-Phase Inverter}
+\label{fig:universal_bridge}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+% Save the Space Vector PWM top subsystem screenshot as 'svpwm_main.png'
+\includegraphics[width=0.7\textwidth]{svpwm_main.png}
+\caption{Main Architecture of the Space Vector PWM Generation Subsystem}
+\label{fig:svpwm_main}
+\end{figure}
+
+The final control actuation in the Simulink model is executed by a Three-Phase Voltage Source Inverter (Universal Bridge), which is powered by a stiff $780 \, \text{V}$ DC link. To translate the continuous domain $v_\alpha^*$ and $v_\beta^*$ voltage commands into discrete transistor switching signals, the model employs a sophisticated \texttt{Space Vector PWM} (SVPWM) subsystem.
+
+SVPWM is widely considered the optimal modulation strategy for three-phase systems. Unlike classical Sinusoidal PWM (SPWM), which treats each phase independently, SVPWM treats the inverter as a single, cohesive unit capable of producing eight discrete voltage vectors (six active vectors forming a hexagon, and two zero vectors at the origin). This holistic approach yields several profound advantages:
+\begin{itemize}
+    \item \textbf{Enhanced DC Bus Utilisation :} SVPWM inherently injects a zero-sequence (triplen harmonic) voltage into the phase commands. This prevents the phase voltages from clipping against the DC rails prematurely, allowing the fundamental output voltage to reach $\frac{V_{dc}}{\sqrt{3}}$, which is approximately 15.47\% higher than the maximum linear output of standard SPWM.
+    \item \textbf{Reduced Harmonic Distortion:} By intelligently scheduling the placement and division of zero vectors, SVPWM significantly minimises the ripple current and, consequently, the Total Harmonic Distortion (THD) of the motor currents.
+    \item \textbf{Reduced Switching Losses:} SVPWM algorithms are typically designed such that only one inverter leg changes state during any transition from one vector to the next, thereby minimising dynamic switching losses in the IGBTs.
+\end{itemize}
+
+\subsection{SVPWM Algorithm Execution}
+
+Within the \texttt{Space Vector PWM} subsystem, the algorithm follows a strict sequence of mathematical operations during each $2 \, \mu s$ sample period:
+
+\subsubsection{Reference Vector Synthesis}
+
+\begin{figure}[ht]
+\centering
+% Save the Vref and angle calculator subsystem screenshot as 'vref_angle_calc.png'
+\includegraphics[width=0.6\textwidth]{vref_angle_calc.png}
+\caption{Simulink Subsystem: $V_{ref}$ Magnitude and Angle ($\theta_{ref}$) Synthesis}
+\label{fig:vref_angle_calc}
+\end{figure}
+
+The incoming stationary frame voltage commands, $v_\alpha^*$ and $v_\beta^*$, define a desired reference voltage vector $\vec{V}_{ref}$ rotating in the complex plane. The model first computes the magnitude and angle of this vector:
+\begin{align}
+    |\vec{V}_{ref}| &= \sqrt{(v_\alpha^*)^2 + (v_\beta^*)^2} \\
+    \theta_{ref} &= \arctan\left(\frac{v_\beta^*}{v_\alpha^*}\right)
+\end{align}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} If the current control loop commands $v_\alpha^* = 300 \, \text{V}$ and $v_\beta^* = 400 \, \text{V}$:
+    \begin{align*}
+        |\vec{V}_{ref}| &= \sqrt{(300)^2 + (400)^2} = \sqrt{90000 + 160000} = \sqrt{250000} = 500 \, \text{V} \\
+        \theta_{ref} &= \arctan\left(\frac{400}{300}\right) = 53.13^\circ
+    \end{align*}
+    \textit{This locates the vector in Sector 1 ($0^\circ$ to $60^\circ$).}}
+    % -------------------------
+
+The angle $\theta_{ref}$ is then evaluated to determine which of the six $60^\circ$ sectors within the hexagon currently contains the reference vector.
+
+\subsubsection{Dwell Time Calculation}
+
+\begin{figure}[ht]
+\centering
+% Save the T0_T1_T2 subsystem screenshot as 'dwell_time_calc.png'
+\includegraphics[width=0.7\textwidth]{dwell_time_calc.png}
+\caption{Simulink Subsystem: Dwell Time ($T_0, T_1, T_2$) Calculation}
+\label{fig:dwell_time_calc}
+\end{figure}
+
+Once the sector is identified, the SVPWM algorithm must synthesise $\vec{V}_{ref}$ by time-averaging the two adjacent active voltage vectors ($\vec{V}_1$ and $\vec{V}_2$) and the zero vectors ($\vec{V}_0$ and $\vec{V}_7$) over the switching period $T_s$. The dwell times for the active vectors are calculated using the volt-second balance principle:
+\begin{align}
+    T_1 &= \frac{\sqrt{3} \cdot T_s \cdot |\vec{V}_{ref}|}{V_{dc}} \sin\left(\frac{\pi}{3} - \theta'\right) \\
+    T_2 &= \frac{\sqrt{3} \cdot T_s \cdot |\vec{V}_{ref}|}{V_{dc}} \sin(\theta')
+\end{align}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Using $V_{dc} = 780 \, \text{V}$, $T_s = 2 \times 10^{-6} \, \text{s}$, and $|\vec{V}_{ref}| = 500 \, \text{V}$ at $\theta' = 53.13^\circ$ (or $0.927 \, \text{rad}$):
+    \begin{align*}
+        \text{Factor} &= \frac{\sqrt{3} \times (2 \times 10^{-6}) \times 500}{780} = \frac{0.001732}{780} = 2.22 \times 10^{-6} \, \text{s} \\
+        T_1 &= 2.22 \times 10^{-6} \cdot \sin(60^\circ - 53.13^\circ) = 2.22 \times 10^{-6} \cdot \sin(6.87^\circ) = 2.22\mu\text{s} \times 0.119 = 0.265 \, \mu\text{s} \\
+        T_2 &= 2.22 \times 10^{-6} \cdot \sin(53.13^\circ) = 2.22\mu\text{s} \times 0.8 = 1.776 \, \mu\text{s}
+    \end{align*}}
+    % -------------------------
+
+where $\theta'$ is the local angle of $\vec{V}_{ref}$ relative to the start of the current sector ($0 \le \theta' \le 60^\circ$).
+
+The remaining time in the switching period is allocated to the zero vectors to regulate the magnitude:
+\begin{equation}
+    T_0 = T_s - T_1 - T_2
+\end{equation}
+
+    % --- CALCULATION BLOCK ---
+    \textcolor{blue}{\textbf{[Calculation Execution]} Given $T_s = 2 \, \mu\text{s}$, $T_1 = 0.265 \, \mu\text{s}$, and $T_2 = 1.776 \, \mu\text{s}$ (note: time saturated at bounds in a physical implementation if $T_1+T_2 > T_s$):
+    \begin{align*}
+        T_0 &= 2.0 - 0.265 - 1.776 = -0.041 \, \mu\text{s} \rightarrow 0 \, \mu\text{s} \, \text{(Overmodulation Check Required)}
+    \end{align*}
+    \textit{Note: In the model's normal operational boundary, $T_0$ splits the remaining non-active zero-vector time evenly.}}
+    % -------------------------
+
+\subsubsection{Switching Sequence Generation}
+
+\begin{figure}[ht]
+\centering
+% Save the Gate signals subsystem screenshot as 'gate_signals_gen.png'
+\includegraphics[width=0.8\textwidth]{gate_signals_gen.png}
+\caption{Simulink Subsystem: Gate Drive Signals Generation}
+\label{fig:gate_signals_gen}
+\end{figure}
+
+Finally, the model translates these calculated dwell times into physical gate drive signals ($Vg_1$ through $Vg_6$). A typical symmetrical switching pattern is employed (e.g., $\vec{V}_0 \to \vec{V}_1 \to \vec{V}_2 \to \vec{V}_7 \to \vec{V}_2 \to \vec{V}_1 \to \vec{V}_0$). The zero vector time $T_0$ is divided equally between the two null states ($\vec{V}_0$ where all lower switches are ON, and $\vec{V}_7$ where all upper switches are ON). This symmetrical arrangement ensures optimal harmonic performance and symmetric pulse generation across the inverter poles.
+
+\section{Simulation Results and Conclusion}
+
+\subsection{Simulation Performance Analysis}
+To validate the theoretical robustness of the implemented IFOC architecture, the dynamic response of the 50 HP induction motor is captured via the primary simulation scopes. The system's efficacy is evaluated based on its speed tracking capability, electromagnetic torque regulation, and the harmonic quality of the stator currents.
+
+\begin{figure}[ht]
+\centering
+% Save the main performance scope screenshot (showing Speed, Torque, and Currents) as 'scope_performance.png'
+\includegraphics[width=0.95\textwidth]{scope_performance.png}
+\caption{Overall System Dynamic Performance. \textbf{Top:} Reference Speed vs. Actual Motor Speed (RPM). \textbf{Middle:} Developed Electromagnetic Torque $T_e$ (N$\cdot$m). \textbf{Bottom:} Three-Phase Stator Currents $i_{a,b,c}$ (A).}
+\label{fig:scope_performance}
+\end{figure}
+
+As illustrated in Figure \ref{fig:scope_performance}, the cascaded control topology yields exceptional transient and steady-state performance. The outer speed loop ensures the actual mechanical rotor speed tightly tracks the reference speed trajectory with negligible steady-state error and strictly bounded overshoot, characteristic of a well-tuned Proportional-Integral (PI) regulator interacting with the plant's mechanical inertia ($J = 0.662 \, \text{kg}\cdot\text{m}^2$). 
+
+Simultaneously, the middle plot demonstrates the instantaneous nature of the electromagnetic torque ($T_e$). Because the flux is held constant via the $d$-axis, the torque responds immediately to changes in the $q$-axis current command, perfectly emulating the decoupled transient dynamics of a separately excited DC machine. Finally, the bottom plot confirms that the three-phase stator currents ($i_a, i_b, i_c$) maintain a highly sinusoidal profile. The fast-acting inner current loops effectively suppress the high-frequency switching ripple, ensuring optimal magnetic loading and minimal copper losses.
+
+\begin{figure}[ht]
+\centering
+% Save the Phase and Line Voltages scope screenshot as 'scope_voltages.png'
+\includegraphics[width=0.95\textwidth]{scope_voltages.png}
+\caption{Space Vector PWM Actuation. \textbf{Top:} Inverter Phase Voltages ($V_{an}, V_{bn}, V_{cn}$). \textbf{Bottom:} Inverter Line-to-Line Voltages ($V_{ab}, V_{bc}, V_{ca}$).}
+\label{fig:scope_voltages}
+\end{figure}
+
+Figure \ref{fig:scope_voltages} explicitly validates the output of the Space Vector PWM (SVPWM) subsystem driven by the $780 \, \text{V}$ DC link. The phase voltages (top) clearly exhibit the signature ``saddle'' or ``double-hump'' profile. This non-sinusoidal shape is the direct mathematical result of the SVPWM algorithm injecting a zero-sequence (triplen harmonic) voltage into the reference commands. This injection actively shifts the neutral point of the motor, preventing the phase voltages from prematurely clamping against the positive and negative DC bus rails. Consequently, this maximises the linear modulation range—allowing 15.47\% greater fundamental voltage output compared to standard SPWM—while still producing perfectly balanced, sinusoidal line-to-line voltages (bottom) and motor currents.
+
+\subsection{Concluding Remarks}
+The provided Simulink model serves as far more than a mere theoretical exercise; it is a highly accurate, functionally complete ``digital twin'' of a modern, industrial-grade Indirect Field Oriented Control (IFOC) system for a Squirrel-Cage Induction Motor. By meticulously modelling the electromechanical plant, the coordinate transformations, and the discrete-time control logic, this architecture successfully demystifies the complex, non-linear dynamics inherent in three-phase AC machines.
+
+From a pedagogical and engineering standpoint, the model elegantly demonstrates how a heavily coupled, multi-variable AC system can be mathematically transformed into a decoupled, linear system. By projecting the stator currents into a synchronously rotating $d-q$ reference frame, the architecture proves that an induction motor can be controlled with the same orthogonal precision—and dynamic transient response—as a separately excited DC motor. 
+
+Furthermore, the simulation bridges the critical gap between continuous-time control theory and practical digital implementation. Operating at a stringent $2 \, \mu s$ sample time, the model faithfully replicates the execution environment of a modern Digital Signal Processor (DSP) or Field Programmable Gate Array (FPGA). It illustrates the necessary bandwidth separation between the cascaded control loops: the slower, inertia-dominated outer speed loop dictates the torque reference, while the high-bandwidth inner PI current regulators force the stator currents to track the synthesised DC references instantaneously.
+
+Finally, the inclusion of the Space Vector Pulse Width Modulation (SVPWM) subsystem completes the drive topology by connecting the control mathematics to the physical power electronics. It highlights how abstract voltage vectors ($v_\alpha^*$ and $v_\beta^*$) are translated into optimised, hardware-level gate drive signals that maximise DC bus utilisation and suppress harmonic distortion. Ultimately, this Simulink model stands as an exemplary instructional paradigm, seamlessly unifying electromagnetic machine theory, advanced discrete-time control systems, and power electronic actuation into a single, cohesive framework.
+
+\end{document}
