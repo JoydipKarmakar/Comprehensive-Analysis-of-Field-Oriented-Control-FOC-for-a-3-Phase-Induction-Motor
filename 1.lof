@@ -1,0 +1,41 @@
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {1.1}{\ignorespaces Overall Simulink Architecture of Field Oriented Control of IM}}{9}{}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {2.1}{\ignorespaces Model Initialization Function (InitFcn) showing Plant Parameters}}{12}{}%
+\contentsline {figure}{\numberline {2.2}{\ignorespaces ABC to DQ Transformation and IM Mathematical Model Subsystem}}{13}{}%
+\contentsline {figure}{\numberline {2.3}{\ignorespaces Internal Structure of the IM Mathematical Model}}{14}{}%
+\contentsline {figure}{\numberline {2.4}{\ignorespaces Dynamic State-Space Modeling of the $d$-axis Stator Current ($I_{ds}$)}}{15}{}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {3.1}{\ignorespaces FOC Control Architecture Schematic}}{17}{}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Overall Reference Frame Transformation Process}}{18}{}%
+\contentsline {figure}{\numberline {3.3}{\ignorespaces Forward Clarke Transformation Simulink Block}}{18}{}%
+\contentsline {figure}{\numberline {3.4}{\ignorespaces Vector Representation of the Clarke Transform}}{19}{}%
+\contentsline {figure}{\numberline {3.5}{\ignorespaces Forward Park Transformation Simulink Block}}{19}{}%
+\contentsline {figure}{\numberline {3.6}{\ignorespaces Vector Representation of the Park Transform ($dq$ Rotating Frame)}}{20}{}%
+\contentsline {figure}{\numberline {3.7}{\ignorespaces Inverse Park Transformation Simulink Block}}{20}{}%
+\contentsline {figure}{\numberline {3.8}{\ignorespaces Vector Representation of the Inverse Park Transform}}{21}{}%
+\contentsline {figure}{\numberline {3.9}{\ignorespaces Detailed Internal Subsystems of the FOC Control Block}}{21}{}%
+\contentsline {figure}{\numberline {3.10}{\ignorespaces Reference $I_d$ Calculation Block}}{22}{}%
+\contentsline {figure}{\numberline {3.11}{\ignorespaces Reference $I_q$ Calculation Block}}{22}{}%
+\contentsline {figure}{\numberline {3.12}{\ignorespaces Electrical Flux Angle ($\theta $) Calculation Block}}{23}{}%
+\contentsline {figure}{\numberline {3.13}{\ignorespaces Inner and Outer PI Control Loops}}{24}{}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {4.1}{\ignorespaces SVPWM Algorithmic Flowchart}}{25}{}%
+\contentsline {figure}{\numberline {4.2}{\ignorespaces SVPWM Internal Subsystems in Simulink}}{25}{}%
+\contentsline {figure}{\numberline {4.3}{\ignorespaces Vref Magnitude and Angle Calculation Block}}{26}{}%
+\contentsline {figure}{\numberline {4.4}{\ignorespaces Modulation Index Safety Check Block}}{26}{}%
+\contentsline {figure}{\numberline {4.5}{\ignorespaces T1, T2, and T0 Calculation Subsystem}}{27}{}%
+\contentsline {figure}{\numberline {4.6}{\ignorespaces Sector Switching Sequence Generation Logic}}{27}{}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {5.1}{\ignorespaces Reference vs Actual Speed Tracking Performance}}{28}{}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces Dynamic Response of Motor Speed, Torque, and Phase Currents}}{28}{}%
+\contentsline {figure}{\numberline {5.3}{\ignorespaces Electromagnetic Torque Transient Spikes during Acceleration/Deceleration}}{29}{}%
+\contentsline {figure}{\numberline {5.4}{\ignorespaces Rotor Flux Estimation Reaching Steady State}}{29}{}%
+\contentsline {figure}{\numberline {5.5}{\ignorespaces Stator $d$-axis and $q$-axis Currents ($I_{ds}$ and $I_{qs}$)}}{29}{}%
+\contentsline {figure}{\numberline {5.6}{\ignorespaces Three-Phase Stator Currents Under Dynamic Load Changes}}{30}{}%
+\contentsline {figure}{\numberline {5.7}{\ignorespaces Induced Rotor Currents at Startup}}{30}{}%
+\contentsline {figure}{\numberline {5.8}{\ignorespaces Steady-State Stator Voltages $V_d$ and $V_q$}}{30}{}%
+\contentsline {figure}{\numberline {5.9}{\ignorespaces Calculated SVPWM Dwell Times ($T_0, T_1, T_2$)}}{31}{}%
+\contentsline {figure}{\numberline {5.10}{\ignorespaces Duty Cycles for High-Side Inverter Switches ($S_1, S_3, S_5$)}}{31}{}%
+\contentsline {figure}{\numberline {5.11}{\ignorespaces Final Discretized Gate Pulses for IGBTs}}{31}{}%
+\contentsline {figure}{\numberline {5.12}{\ignorespaces Phase and Line Voltage Measurements on the Plant}}{32}{}%
